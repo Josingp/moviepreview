@@ -14,22 +14,24 @@ export const AdminPanel: React.FC = () => {
   const parseCGVData = (data: any): Record<string, Seat> => {
     const seats: Record<string, Seat> = {};
     
-    // CGV seatArr is usually a 2D array
     if (Array.isArray(data)) {
       data.forEach((rowArr: any[], rowIndex) => {
+        if (!Array.isArray(rowArr)) return;
+        
         rowArr.forEach((seatData: any, colIndex) => {
           if (!seatData || seatData.seatStusCd === '9') return; // Skip empty/blocked
 
+          // If custom extractor gives rowNm/seatNo we use them, else fallback
           const rowNm = seatData.seatRowNm || String.fromCharCode(65 + rowIndex);
           const seatNo = seatData.seatNo || (colIndex + 1).toString();
-          const id = `${rowNm}-${seatNo}`;
+          const id = `${rowNm}-${colIndex + 1}`;
 
           seats[id] = {
             id,
             row: rowNm,
-            col: parseInt(seatNo),
+            col: colIndex + 1,
             label: `${rowNm}${seatNo}`,
-            type: seatData.szoneKindCd === '04' ? 'sweetbox' : 'normal'
+            type: (seatData.customType || (seatData.szoneKindCd === '04' ? 'sweetbox' : 'normal')) as 'normal' | 'disabled' | 'sweetbox'
           };
         });
       });

@@ -17,6 +17,11 @@ service cloud.firestore {
         (request.auth.token.email == "mcfly0803@gmail.com");
     }
 
+    function isValidProject(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.createdAt is timestamp;
+    }
+
     function isValidTheater(data) {
       return data.name is string && data.name.size() > 0 &&
              data.rows is number && data.rows > 0 &&
@@ -25,21 +30,32 @@ service cloud.firestore {
     }
 
     function isValidReservation(data) {
-      return data.theaterId is string && data.theaterId.size() > 0 &&
+      let isGroupValid = (!('groupName' in data) || (data.groupName is string && data.groupName.size() < 100));
+      let isPhoneValid = (!('phoneLast4' in data) || (data.phoneLast4 is string && data.phoneLast4.size() <= 20));
+      return data.projectId is string && data.projectId.size() > 0 &&
+             data.theaterId is string && data.theaterId.size() > 0 &&
              data.seatId is string && data.seatId.size() > 0 &&
              data.userName is string && data.userName.size() > 0 && data.userName.size() < 100 &&
-             data.reservedAt is timestamp;
+             data.reservedAt is timestamp &&
+             isGroupValid && isPhoneValid;
+    }
+
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidProject(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /theaters/{theaterId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidTheater(request.resource.data);
+      allow create, update: if isAdmin() && isValidTheater(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /reservations/{reservationId} {
       allow read: if true;
-      allow create: if isValidReservation(request.resource.data);
-      allow update: if isValidReservation(request.resource.data);
+      allow create: if isAdmin() && isValidReservation(request.resource.data);
+      allow update: if isAdmin() && isValidReservation(request.resource.data);
       allow delete: if isAdmin();
     }
   }

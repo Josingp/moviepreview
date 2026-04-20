@@ -19,8 +19,17 @@ export interface Theater {
 
 export interface Reservation {
   id: string;
+  projectId: string;
   theaterId: string;
   seatId: string;
   userName: string;
+  groupName?: string;
+  phoneLast4?: string;
   reservedAt: Timestamp;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: Timestamp;
 }
