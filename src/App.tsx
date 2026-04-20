@@ -231,16 +231,14 @@ export default function App() {
     setSelectedSeats(newSelected);
   };
 
-  // 🔥 인증 상태 처리: 로그인한 누구나 관리자가 되도록 수정
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setIsAdmin(!!u); // 로그인하면 조건 없이 관리자 권한 부여
+      setIsAdmin(!!u);
     });
     return () => unsubscribe();
   }, []);
 
-  // 🔥 프로젝트 로드: 오직 내가 만든 프로젝트(ownerId)만 불러오도록 격리 처리
   useEffect(() => {
     if (!user) {
       setProjects([]);
@@ -254,7 +252,6 @@ export default function App() {
       setProjects(docs);
       
       if (docs.length > 0) {
-        // 기존에 선택된 프로젝트가 내 프로젝트 목록에 있으면 유지, 없으면 최신 것 선택
         setSelectedProject(prev => docs.find(p => p.id === prev?.id) || docs[0]);
       } else {
         setSelectedProject(null);
@@ -263,7 +260,6 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // 상영관(Theaters)은 모두가 공유 (조건 없이 전체 로드)
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'theaters'), (snapshot) => {
       const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Theater));
@@ -275,7 +271,6 @@ export default function App() {
     return () => unsubscribe();
   }, [selectedTheater]);
 
-  // 해당 프로젝트와 상영관에 맞는 예약 현황 로드
   useEffect(() => {
     if (!selectedTheater || !selectedProject) {
       setReservations({});
@@ -348,7 +343,8 @@ export default function App() {
     }
   };
 
-  const handleDeleteTheater = async (theaterId: string, e: React.MouseEvent) => {
+  // 🔥 수정됨: 예약 데이터만 지우고 상영관은 살려두는 함수
+  const handleClearReservations = async (theaterId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!isAdmin) {
@@ -356,7 +352,7 @@ export default function App() {
       return;
     }
     
-    showConfirm('이 상영관과 관련된 모든 좌석 데이터와 예약을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.', async () => {
+    showConfirm('현재 상영관의 모든 예약 데이터를 초기화하시겠습니까?\n(상영관 좌석 구조는 유지되며 예약 내역만 삭제됩니다.)', async () => {
       try {
         const q = query(collection(db, 'reservations'), where('theaterId', '==', theaterId));
         const snapshot = await getDocs(q);
@@ -372,14 +368,10 @@ export default function App() {
           await batch.commit();
         }
         
-        await deleteDoc(doc(db, 'theaters', theaterId));
-        
-        if (selectedTheater?.id === theaterId) {
-          setSelectedTheater(null);
-        }
+        showAlert('현재 상영관의 모든 예약 내역이 성공적으로 초기화되었습니다.');
       } catch (err: any) {
-        console.error('Error deleting theater:', err);
-        showAlert(`삭제 중 오류가 발생했습니다: ${err.message}`);
+        console.error('Error clearing reservations:', err);
+        showAlert(`예약 초기화 중 오류가 발생했습니다: ${err.message}`);
       }
     });
   };
@@ -553,7 +545,6 @@ export default function App() {
             const centerRowIdx = Math.floor(rowLabels.length / 2);
             const centerCol = Math.floor(selectedTheater.cols / 2);
             
-            // 🔥 직사각형 배치(체비쇼프 거리) 반영
             const scoredSeats = availableSeats.map(s => {
               const rowIdx = rowLabels.indexOf(s.row);
               const rowDist = Math.abs(rowIdx - centerRowIdx) * 2; 
@@ -670,7 +661,6 @@ export default function App() {
     );
   };
 
-  // 🔥 게스트 티켓 조회: 프로젝트 상관없이 전역(글로벌)에서 뒷자리만으로 탐색
   const handleCheckReservation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (searchPhone.length < 4) {
@@ -699,7 +689,6 @@ export default function App() {
     }
   };
 
-  // 🔥 프로젝트 생성 시 생성자의 고유 계정 ID(ownerId)를 함께 저장
   const handleCreateProject = async () => {
     if (!newProjectName.trim() || !user) return;
     try {
@@ -783,7 +772,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* 🔥 게스트 화면에서는 프로젝트 이름(Dropdown)을 완벽히 숨김 */}
             {isAdmin && projects.length > 0 && (
               <div className="flex items-center gap-2 pr-4 border-r border-zinc-800">
                 <select
@@ -850,7 +838,7 @@ export default function App() {
       <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-10">
         {!isAdmin ? (
           /* ==================================================== */
-          /* GUEST VIEW: Search Ticket by Phone */
+          /* GUEST VIEW */
           /* ==================================================== */
           <div className="max-w-2xl mx-auto w-full flex flex-col items-center justify-center min-h-[60vh] space-y-10">
             <div className="text-center space-y-3">
@@ -923,10 +911,9 @@ export default function App() {
           </div>
         ) : (
           /* ==================================================== */
-          /* ADMIN VIEW: Dropdown & Selection Map */
+          /* ADMIN VIEW */
           /* ==================================================== */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-            {/* Left Column: Controls & Info */}
             <div className="lg:col-span-4 space-y-8">
               <section className="space-y-4">
                 <div className="flex gap-2 items-center justify-between">
@@ -956,11 +943,12 @@ export default function App() {
 
                 {selectedTheater && isAdmin && (
                   <div className="space-y-2 mt-2">
+                    {/* 🔥 변경된 부분: 상영관 예약 초기화 (상영관 뼈대 유지) */}
                     <button 
                       className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold py-3 text-sm rounded-xl transition-colors"
-                      onClick={(e) => handleDeleteTheater(selectedTheater.id, e)}
+                      onClick={(e) => handleClearReservations(selectedTheater.id, e)}
                     >
-                      현재 상영관 및 모든 예약 데이터 삭제
+                      현재 상영관 예약 데이터 초기화
                     </button>
                     
                     <div className="pt-4 border-t border-zinc-800">
@@ -1079,7 +1067,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right Column: Seat Map or Admin */}
+            {/* Right Column */}
             <div className="lg:col-span-8">
               <AnimatePresence mode="wait">
                 {showAdmin ? (
