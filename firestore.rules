@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Test collection for connection checking
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "mcfly0803@gmail.com");
+    }
+
+    function isValidTheater(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.rows is number && data.rows > 0 &&
+             data.cols is number && data.cols > 0 &&
+             data.seats is map;
+    }
+
+    function isValidReservation(data) {
+      return data.theaterId is string && data.theaterId.size() > 0 &&
+             data.seatId is string && data.seatId.size() > 0 &&
+             data.userName is string && data.userName.size() > 0 && data.userName.size() < 100 &&
+             data.reservedAt is timestamp;
+    }
+
+    match /theaters/{theaterId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidTheater(request.resource.data);
+    }
+
+    match /reservations/{reservationId} {
+      allow read: if true;
+      allow create: if isValidReservation(request.resource.data);
+      allow update: if isValidReservation(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

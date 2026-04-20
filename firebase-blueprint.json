@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "Theater": {
+      "title": "Theater",
+      "description": "Represents a cinema hall layout",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the theater" },
+        "branch": { "type": "string", "description": "Branch name" },
+        "rows": { "type": "integer", "description": "Number of rows" },
+        "cols": { "type": "integer", "description": "Number of columns" },
+        "seats": { "type": "object", "description": "Map of seat coordinates to labels and status" }
+      },
+      "required": ["name", "rows", "cols", "seats"]
+    },
+    "Reservation": {
+      "title": "Reservation",
+      "description": "A seat reservation for a premiere",
+      "type": "object",
+      "properties": {
+        "theaterId": { "type": "string", "description": "ID of the theater" },
+        "seatId": { "type": "string", "description": "ID of the seat (e.g., A-12)" },
+        "userName": { "type": "string", "description": "Name of the person who reserved the seat" },
+        "reservedAt": { "type": "string", "format": "date-time", "description": "When the reservation was made" }
+      },
+      "required": ["theaterId", "seatId", "userName", "reservedAt"]
+    }
+  },
+  "firestore": {
+    "/theaters/{theaterId}": {
+      "schema": "Theater",
+      "description": "Collection of theater layouts"
+    },
+    "/reservations/{reservationId}": {
+      "schema": "Reservation",
+      "description": "Collection of seat reservations"
+    }
+  }
+}

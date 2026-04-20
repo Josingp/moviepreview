@@ -1,0 +1,6 @@
+{
+  "name": "시사회 좌석 관리 시스템",
+  "description": "CGV 상영관 좌석 데이터를 활용한 시사회 전용 좌석 배정 및 관리 시스템",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
