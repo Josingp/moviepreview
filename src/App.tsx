@@ -231,26 +231,39 @@ export default function App() {
     setSelectedSeats(newSelected);
   };
 
+  // 🔥 인증 상태 처리: 로그인한 누구나 관리자가 되도록 수정
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setIsAdmin(u?.email === 'mcfly0803@gmail.com');
+      setIsAdmin(!!u); // 로그인하면 조건 없이 관리자 권한 부여
     });
     return () => unsubscribe();
   }, []);
 
+  // 🔥 프로젝트 로드: 오직 내가 만든 프로젝트(ownerId)만 불러오도록 격리 처리
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'projects'), (snapshot) => {
+    if (!user) {
+      setProjects([]);
+      setSelectedProject(null);
+      return;
+    }
+    const q = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-      docs.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+      docs.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
       setProjects(docs);
-      if (docs.length > 0 && !selectedProject) {
-        setSelectedProject(docs[0]);
+      
+      if (docs.length > 0) {
+        // 기존에 선택된 프로젝트가 내 프로젝트 목록에 있으면 유지, 없으면 최신 것 선택
+        setSelectedProject(prev => docs.find(p => p.id === prev?.id) || docs[0]);
+      } else {
+        setSelectedProject(null);
       }
     });
     return () => unsubscribe();
-  }, [selectedProject]);
+  }, [user]);
 
+  // 상영관(Theaters)은 모두가 공유 (조건 없이 전체 로드)
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'theaters'), (snapshot) => {
       const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Theater));
@@ -262,6 +275,7 @@ export default function App() {
     return () => unsubscribe();
   }, [selectedTheater]);
 
+  // 해당 프로젝트와 상영관에 맞는 예약 현황 로드
   useEffect(() => {
     if (!selectedTheater || !selectedProject) {
       setReservations({});
@@ -297,7 +311,6 @@ export default function App() {
   const handleLogout = () => signOut(auth);
 
   const handleReserve = async () => {
-    // 🔥 침묵의 에러 1: 프로젝트 미선택 시 경고 팝업 추가
     if (!selectedProject) {
       showAlert("상단 우측에서 예약을 저장할 '새 프로젝트'(예: 어벤져스 시사회)를 먼저 선택하거나 만들어주세요.");
       return;
@@ -325,6 +338,8 @@ export default function App() {
       
       await batch.commit();
       setSelectedSeats([]);
+      setUserName('');
+      setPhone('');
     } catch (err: any) {
       console.error(err);
       showAlert(`예약 중 오류가 발생했습니다: ${err.message}`);
@@ -473,17 +488,15 @@ export default function App() {
     });
   };
 
-  // 🔥 엑셀 자동 배정 메인 함수 (에러 수정판)
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // 🔥 침묵의 에러 2: input 이벤트를 저장해두어 나중에 초기화할 수 있게 함
     const targetInput = e.target;
     const file = targetInput.files?.[0];
     
-    if (!file) return; // 파일 선택 창에서 취소했을 경우
+    if (!file) return;
 
     if (!selectedProject) {
       showAlert("상단 우측에서 '새 프로젝트'(예: 어벤져스 시사회)를 먼저 선택하거나 만들어주세요.");
-      targetInput.value = ''; // 상태 초기화 (다시 클릭 가능하게)
+      targetInput.value = ''; 
       return;
     }
 
@@ -494,7 +507,7 @@ export default function App() {
     }
 
     showConfirm(
-      `[${selectedTheater.name}] 관에 빈 좌석을 찾아 자동으로 배치합니다.\n기존 예약을 보존하며 남은 자리에만 들어갑니다.\n계속하시겠습니까?`, 
+      `[${selectedTheater.name}] 관에 빈 좌석을 찾아 사각형태로 자동 배치합니다.\n기존 예약을 보존하며 남은 자리에만 들어갑니다.\n계속하시겠습니까?`, 
       () => {
         const reader = new FileReader();
         reader.onload = async (evt) => {
@@ -540,26 +553,16 @@ export default function App() {
             const centerRowIdx = Math.floor(rowLabels.length / 2);
             const centerCol = Math.floor(selectedTheater.cols / 2);
             
+            // 🔥 직사각형 배치(체비쇼프 거리) 반영
             const scoredSeats = availableSeats.map(s => {
               const rowIdx = rowLabels.indexOf(s.row);
-  
-                // 1. 행(Row)과 열(Col)의 중심으로부터의 절대 거리 계산
-                // 영화관 특성상 앞뒤(행) 이동이 좌우(열) 이동보다 체감이 크므로 행에 가중치(* 2) 부여
               const rowDist = Math.abs(rowIdx - centerRowIdx) * 2; 
               const colDist = Math.abs(s.col - centerCol);
-  
-                 // 2. 직사각형 형태의 배치를 위한 '체비쇼프 거리' 적용
-                  // 행 거리와 열 거리 중 '더 큰 값'을 기준으로 사각형 블록(Layer)을 형성
               const rectLayer = Math.max(rowDist, colDist);
-  
-               // 3. 최종 점수: 중심에 가까운 직사각형 블록을 먼저 채우고, 
-              // 같은 블록 안에서도 최대한 정중앙에 가까운 자리를 미세하게 우선하도록 계산
               const score = (rectLayer * 100) + (rowDist * 2) + colDist;
-  
               return { seat: s, score };
             });
 
-            // 🔥 파이어베이스 500개 제한 우회를 위한 다중 배치(Chunk Batch) 적용
             const batches = [writeBatch(db)];
             let currentBatchIndex = 0;
             let opCount = 0;
@@ -623,7 +626,6 @@ export default function App() {
                         
                         const reservationId = `${selectedProject.id}_${selectedTheater.id}_${assignedSeat.id}`;
                         
-                        // 500개 제한이 다가오면 새로운 배치(묶음) 생성
                         if (opCount >= 490) {
                             batches.push(writeBatch(db));
                             currentBatchIndex++;
@@ -647,7 +649,6 @@ export default function App() {
                 });
             });
 
-            // 쪼개진 모든 배치들 서버에 일괄 전송
             for (const b of batches) {
                 await b.commit();
             }
@@ -657,24 +658,23 @@ export default function App() {
             console.error(err);
             showAlert(`엑셀 처리 중 오류가 발생했습니다: ${err.message}`);
           } finally {
-            targetInput.value = ''; // 에러가 나든 성공하든 무조건 input 값 비워주기 (다음번 클릭이 가능하도록)
+            targetInput.value = ''; 
           }
         };
         
         reader.readAsArrayBuffer(file);
       },
-      // 취소 버튼을 눌렀을 때도 input 비워주기
       () => {
         targetInput.value = '';
       }
     );
   };
 
+  // 🔥 게스트 티켓 조회: 프로젝트 상관없이 전역(글로벌)에서 뒷자리만으로 탐색
   const handleCheckReservation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchPhone.length < 4 || !selectedProject) {
-      if (!selectedProject) showAlert("배정 조회를 위한 프로젝트가 선택되지 않았습니다.");
-      else showAlert("휴대폰 번호 뒷자리 4자리를 정확히 입력해주세요.");
+    if (searchPhone.length < 4) {
+      showAlert("휴대폰 번호 뒷자리 4자리를 정확히 입력해주세요.");
       return;
     }
     
@@ -682,11 +682,15 @@ export default function App() {
     try {
       const q = query(
         collection(db, 'reservations'), 
-        where('projectId', '==', selectedProject.id),
         where('phoneLast4', '==', searchPhone)
       );
       const snap = await getDocs(q);
       const results = snap.docs.map(d => ({ id: d.id, ...d.data() } as Reservation));
+      
+      if(results.length === 0) {
+        showAlert("입력하신 번호로 배정된 좌석이 없습니다.");
+      }
+      
       setSearchResults(results);
     } catch(err: any) {
       showAlert(`조회 중 오류가 발생했습니다: ${err.message}`);
@@ -695,12 +699,17 @@ export default function App() {
     }
   };
 
+  // 🔥 프로젝트 생성 시 생성자의 고유 계정 ID(ownerId)를 함께 저장
   const handleCreateProject = async () => {
-    if (!newProjectName.trim()) return;
+    if (!newProjectName.trim() || !user) return;
     try {
       const ref = doc(collection(db, 'projects'));
       const batch2 = writeBatch(db);
-      batch2.set(ref, { name: newProjectName.trim(), createdAt: Timestamp.now() });
+      batch2.set(ref, { 
+        name: newProjectName.trim(), 
+        createdAt: Timestamp.now(),
+        ownerId: user.uid
+      });
       await batch2.commit();
       setNewProjectName('');
       setShowProjectModal(false);
@@ -768,14 +777,14 @@ export default function App() {
               <Film className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-lg leading-tight">시사회 좌석 관리</h1>
+              <h1 className="font-bold text-lg leading-tight">시사회 좌석 확인</h1>
               <p className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest">Premiere Seat</p>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Project Selection */}
-            {projects.length > 0 && (
+            {/* 🔥 게스트 화면에서는 프로젝트 이름(Dropdown)을 완벽히 숨김 */}
+            {isAdmin && projects.length > 0 && (
               <div className="flex items-center gap-2 pr-4 border-r border-zinc-800">
                 <select
                   value={selectedProject?.id || ''}
@@ -786,19 +795,17 @@ export default function App() {
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
-                {isAdmin && (
-                  <div className="flex gap-1">
-                    <button onClick={handleUpdateProjectName} className="text-zinc-400 hover:text-white px-2 py-1 text-xs bg-zinc-800 rounded transition-colors" title="이름 변경">
-                      ✎
-                    </button>
-                    <button onClick={handleDeleteProject} className="text-zinc-400 hover:text-red-400 px-2 py-1 text-xs bg-zinc-800 rounded transition-colors" title="프로젝트 삭제">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                    <button onClick={() => setShowProjectModal(true)} className="text-zinc-400 hover:text-blue-400 px-2 py-1 text-xs bg-zinc-800 rounded transition-colors" title="새 프로젝트">
-                      +
-                    </button>
-                  </div>
-                )}
+                <div className="flex gap-1">
+                  <button onClick={handleUpdateProjectName} className="text-zinc-400 hover:text-white px-2 py-1 text-xs bg-zinc-800 rounded transition-colors" title="이름 변경">
+                    ✎
+                  </button>
+                  <button onClick={handleDeleteProject} className="text-zinc-400 hover:text-red-400 px-2 py-1 text-xs bg-zinc-800 rounded transition-colors" title="프로젝트 삭제">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => setShowProjectModal(true)} className="text-zinc-400 hover:text-blue-400 px-2 py-1 text-xs bg-zinc-800 rounded transition-colors" title="새 프로젝트">
+                    +
+                  </button>
+                </div>
               </div>
             )}
             
@@ -879,7 +886,6 @@ export default function App() {
                   className="w-full space-y-4 mt-8"
                 >
                   {(() => {
-                    // Group results by theaterId
                     const grouped = searchResults.reduce((acc, curr) => {
                       if (!acc[curr.theaterId]) acc[curr.theaterId] = [];
                       acc[curr.theaterId].push(curr);
@@ -890,7 +896,6 @@ export default function App() {
                       const theaterInfo = theaters.find(t => t.id === theaterId);
                       if (!theaterInfo) return null;
                       
-                      // sort reservations by seatId for clean display
                       const seatLabels = (resList as Reservation[]).map(r => theaterInfo.seats[r.seatId]?.label || r.seatId).sort();
                       
                       return (
@@ -967,7 +972,7 @@ export default function App() {
                         <Download className="w-4 h-4" /> 엑셀 양식 다운로드
                       </button>
                       <div className="relative overflow-hidden w-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold py-3 text-sm rounded-xl transition-colors text-center cursor-pointer shadow-lg shadow-indigo-500/10">
-                        <span>엑셀 업로드로 AI 자동 배치 시작</span>
+                        <span>엑셀 업로드로 직사각형 자동 배치 시작</span>
                         <input 
                           type="file" 
                           accept=".xlsx, .xls, .csv" 
