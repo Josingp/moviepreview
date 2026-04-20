@@ -268,7 +268,6 @@ export default function App() {
       return;
     }
     
-    // Clear selection on theater change
     setSelectedSeats([]);
 
     const q = query(collection(db, 'reservations'), 
@@ -284,7 +283,7 @@ export default function App() {
       setReservations(resMap);
     });
     return () => unsubscribe();
-  }, [selectedTheater]);
+  }, [selectedTheater, selectedProject]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -298,7 +297,13 @@ export default function App() {
   const handleLogout = () => signOut(auth);
 
   const handleReserve = async () => {
-    if (!selectedTheater || selectedSeats.length === 0 || !userName || !selectedProject) return;
+    // 🔥 침묵의 에러 1: 프로젝트 미선택 시 경고 팝업 추가
+    if (!selectedProject) {
+      showAlert("상단 우측에서 예약을 저장할 '새 프로젝트'(예: 어벤져스 시사회)를 먼저 선택하거나 만들어주세요.");
+      return;
+    }
+
+    if (!selectedTheater || selectedSeats.length === 0 || !userName) return;
     
     setIsReserving(true);
     try {
@@ -320,7 +325,6 @@ export default function App() {
       
       await batch.commit();
       setSelectedSeats([]);
-      // Do not clear names so user can easily book more under same name if needed
     } catch (err: any) {
       console.error(err);
       showAlert(`예약 중 오류가 발생했습니다: ${err.message}`);
@@ -339,11 +343,9 @@ export default function App() {
     
     showConfirm('이 상영관과 관련된 모든 좌석 데이터와 예약을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.', async () => {
       try {
-        // 1. Delete all reservations for this theater
         const q = query(collection(db, 'reservations'), where('theaterId', '==', theaterId));
         const snapshot = await getDocs(q);
         
-        // Chunk deletions if there are many reservations (Firestore batch limit is 500)
         const chunks = [];
         for (let i = 0; i < snapshot.docs.length; i += 500) {
           chunks.push(snapshot.docs.slice(i, i + 500));
@@ -355,7 +357,6 @@ export default function App() {
           await batch.commit();
         }
         
-        // 2. Delete theater document
         await deleteDoc(doc(db, 'theaters', theaterId));
         
         if (selectedTheater?.id === theaterId) {
@@ -420,7 +421,6 @@ export default function App() {
     const csvRows = [];
     const colIndices = Array.from({ length: selectedTheater.cols }, (_, i) => i + 1);
     
-    // Header
     const header = ['열\\번호', ...colIndices.map(String)];
     csvRows.push(header);
     
@@ -457,7 +457,6 @@ export default function App() {
   };
 
   const handleSeatClick = (seat: Seat) => {
-    // If it's already reserved
     if (reservations[seat.id]) {
       if (isAdmin) {
         const res = reservations[seat.id];
@@ -467,7 +466,6 @@ export default function App() {
       return;
     }
 
-    // Toggle selection
     setSelectedSeats(prev => {
       const exists = prev.find(s => s.id === seat.id);
       if (exists) return prev.filter(s => s.id !== seat.id);
@@ -475,9 +473,25 @@ export default function App() {
     });
   };
 
+  // 🔥 엑셀 자동 배정 메인 함수 (에러 수정판)
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedProject || !selectedTheater) return;
+    // 🔥 침묵의 에러 2: input 이벤트를 저장해두어 나중에 초기화할 수 있게 함
+    const targetInput = e.target;
+    const file = targetInput.files?.[0];
+    
+    if (!file) return; // 파일 선택 창에서 취소했을 경우
+
+    if (!selectedProject) {
+      showAlert("상단 우측에서 '새 프로젝트'(예: 어벤져스 시사회)를 먼저 선택하거나 만들어주세요.");
+      targetInput.value = ''; // 상태 초기화 (다시 클릭 가능하게)
+      return;
+    }
+
+    if (!selectedTheater) {
+      showAlert("좌측에서 엑셀 명단을 배정할 '상영관'을 먼저 선택해주세요.");
+      targetInput.value = '';
+      return;
+    }
 
     showConfirm(
       `[${selectedTheater.name}] 관에 빈 좌석을 찾아 자동으로 배치합니다.\n기존 예약을 보존하며 남은 자리에만 들어갑니다.\n계속하시겠습니까?`, 
@@ -491,25 +505,28 @@ export default function App() {
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
             
-            // Skip header row
-            const rows = data.slice(1).filter(r => r[0] || r[1]); // at least group name or name
+            const rows = data.slice(1).filter(r => r[0] || r[1]); 
             
+            if (rows.length === 0) {
+              showAlert("엑셀 파일에 유효한 데이터(이름, 좌석 등)가 없습니다. 양식을 확인해주세요.");
+              return;
+            }
+
             interface Request { groupName: string; name: string; priority: number; phone: string; count: number; }
             const requests: Request[] = rows.map(r => ({
               groupName: String(r[0] || '').trim(),
               name: String(r[1] || '').trim(),
-              priority: parseInt(r[2]) || 1, // 1 to 5
+              priority: parseInt(r[2]) || 1, 
               phone: String(r[3] || '').replace(/[^0-9]/g, '').slice(-4),
               count: parseInt(r[4]) || 1
             }));
             
-            // Group them
             type GroupObj = { priority: number; members: Request[]; totalCount: number; name: string; };
             const groupsObj: Record<string, GroupObj> = {};
             requests.forEach(req => {
               const gName = req.groupName || req.name || '미지정그룹';
               if (!groupsObj[gName]) groupsObj[gName] = { priority: req.priority, members: [], totalCount: 0, name: gName };
-              groupsObj[gName].priority = Math.max(groupsObj[gName].priority, req.priority); // Highest priority wins
+              groupsObj[gName].priority = Math.max(groupsObj[gName].priority, req.priority); 
               groupsObj[gName].members.push(req);
               groupsObj[gName].totalCount += req.count;
             });
@@ -517,7 +534,6 @@ export default function App() {
             const sortedGroups = Object.values(groupsObj)
               .sort((a, b) => b.priority - a.priority || b.totalCount - a.totalCount);
 
-            // Find available seats scoring near center
             const availableSeats = (Object.values(selectedTheater.seats) as Seat[]).filter(s => s.type !== 'empty' && !reservations[s.id]);
             
             const rowLabels = Array.from(new Set((Object.values(selectedTheater.seats) as Seat[]).map(s => s.row))).sort();
@@ -526,16 +542,17 @@ export default function App() {
             
             const scoredSeats = availableSeats.map(s => {
               const rowIdx = rowLabels.indexOf(s.row);
-              const score = Math.pow(rowIdx - centerRowIdx, 2) * 2 + Math.pow(s.col - centerCol, 2); // row distance matters twice as much
+              const score = Math.pow(rowIdx - centerRowIdx, 2) * 2 + Math.pow(s.col - centerCol, 2); 
               return { seat: s, score };
             });
 
-            // Batch writes
-            const batch = writeBatch(db);
+            // 🔥 파이어베이스 500개 제한 우회를 위한 다중 배치(Chunk Batch) 적용
+            const batches = [writeBatch(db)];
+            let currentBatchIndex = 0;
+            let opCount = 0;
             let placedCount = 0;
             let failCount = 0;
 
-            // Group seats by row for contiguous placement
             const rowsOfSeats: Record<string, { seat: Seat; score: number }[]> = {};
             scoredSeats.forEach(ss => {
               if (!rowsOfSeats[ss.seat.row]) rowsOfSeats[ss.seat.row] = [];
@@ -549,12 +566,9 @@ export default function App() {
                 let bestBlock: Seat[] = [];
                 let bestScore = Infinity;
                 
-                // Try contiguous first
                 for (const rList of Object.values(rowsOfSeats)) {
-                    // sliding window
                     for (let i = 0; i <= rList.length - count; i++) {
                         const block = rList.slice(i, i + count);
-                        // verify they are contiguous and unused
                         let contiguous = true;
                         let blockScore = 0;
                         for (let j = 0; j < block.length; j++) {
@@ -571,7 +585,6 @@ export default function App() {
                     }
                 }
 
-                // If no contiguous block found, fallback to best available random seats
                 if (bestBlock.length === 0) {
                     const available = scoredSeats.filter(ss => !usedSeatIds.has(ss.seat.id)).sort((a, b) => a.score - b.score);
                     if (available.length >= count) {
@@ -596,7 +609,15 @@ export default function App() {
                         usedSeatIds.add(assignedSeat.id);
                         
                         const reservationId = `${selectedProject.id}_${selectedTheater.id}_${assignedSeat.id}`;
-                        batch.set(doc(db, 'reservations', reservationId), {
+                        
+                        // 500개 제한이 다가오면 새로운 배치(묶음) 생성
+                        if (opCount >= 490) {
+                            batches.push(writeBatch(db));
+                            currentBatchIndex++;
+                            opCount = 0;
+                        }
+                        
+                        batches[currentBatchIndex].set(doc(db, 'reservations', reservationId), {
                             projectId: selectedProject.id,
                             theaterId: selectedTheater.id,
                             seatId: assignedSeat.id,
@@ -606,27 +627,32 @@ export default function App() {
                             reservedAt: Timestamp.now()
                         });
                         
+                        opCount++;
                         seatIdx++;
                         placedCount++;
                     }
                 });
             });
 
-            await batch.commit();
+            // 쪼개진 모든 배치들 서버에 일괄 전송
+            for (const b of batches) {
+                await b.commit();
+            }
+
             showAlert(`배치 완료! 총 ${placedCount}명을 배치했습니다.` + (failCount > 0 ? `\n좌석 부족으로 ${failCount}명이 배치되지 못했습니다.` : ''));
           } catch(err: any) {
             console.error(err);
             showAlert(`엑셀 처리 중 오류가 발생했습니다: ${err.message}`);
           } finally {
-            e.target.value = '';
+            targetInput.value = ''; // 에러가 나든 성공하든 무조건 input 값 비워주기 (다음번 클릭이 가능하도록)
           }
         };
         
         reader.readAsArrayBuffer(file);
       },
-      // onCancel
+      // 취소 버튼을 눌렀을 때도 input 비워주기
       () => {
-        e.target.value = '';
+        targetInput.value = '';
       }
     );
   };
