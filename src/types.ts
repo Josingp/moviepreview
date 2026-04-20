@@ -19,13 +19,16 @@ export interface Theater {
 
 export interface Reservation {
   id: string;
-  projectId: string;
+  projectId?: string;
   theaterId: string;
   seatId: string;
   userName: string;
   groupName?: string;
   phoneLast4?: string;
   reservedAt: Timestamp;
+  // 👇 아래 두 줄이 새로 추가된 체크인 데이터입니다.
+  isCheckedIn?: boolean;
+  checkInTime?: Timestamp;
 }
 
 export interface Project {
