@@ -542,7 +542,20 @@ export default function App() {
             
             const scoredSeats = availableSeats.map(s => {
               const rowIdx = rowLabels.indexOf(s.row);
-              const score = Math.pow(rowIdx - centerRowIdx, 2) * 2 + Math.pow(s.col - centerCol, 2); 
+  
+                // 1. 행(Row)과 열(Col)의 중심으로부터의 절대 거리 계산
+                // 영화관 특성상 앞뒤(행) 이동이 좌우(열) 이동보다 체감이 크므로 행에 가중치(* 2) 부여
+              const rowDist = Math.abs(rowIdx - centerRowIdx) * 2; 
+              const colDist = Math.abs(s.col - centerCol);
+  
+                 // 2. 직사각형 형태의 배치를 위한 '체비쇼프 거리' 적용
+                  // 행 거리와 열 거리 중 '더 큰 값'을 기준으로 사각형 블록(Layer)을 형성
+              const rectLayer = Math.max(rowDist, colDist);
+  
+               // 3. 최종 점수: 중심에 가까운 직사각형 블록을 먼저 채우고, 
+              // 같은 블록 안에서도 최대한 정중앙에 가까운 자리를 미세하게 우선하도록 계산
+              const score = (rectLayer * 100) + (rowDist * 2) + colDist;
+  
               return { seat: s, score };
             });
 
