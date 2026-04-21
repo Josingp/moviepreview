@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth } from './firebase';
+import { BRAND_LOGOS } from './constants';
 import { 
   collection, 
   onSnapshot, 
@@ -70,6 +71,8 @@ export default function App() {
 
   const [theaters, setTheaters] = useState<Theater[]>([]);
   const [selectedTheater, setSelectedTheater] = useState<Theater | null>(null);
+  const [selectedBrand, setSelectedBrand] = useState<string>('');
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [projectReservations, setProjectReservations] = useState<ExtendedReservation[]>([]);
   
   // 예약 데이터(Record 맵 형태) 계산 - 선택된 상영관용
@@ -151,12 +154,9 @@ export default function App() {
     const unsubscribe = onSnapshot(collection(db, 'theaters'), (snapshot) => {
       const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Theater));
       setTheaters(docs);
-      if (docs.length > 0 && !selectedTheater) {
-        setSelectedTheater(docs[0]);
-      }
     });
     return () => unsubscribe();
-  }, [selectedTheater]);
+  }, []);
 
   // 프로젝트 단위의 예약 현황 모두 로드
   useEffect(() => {
@@ -868,45 +868,95 @@ export default function App() {
                 <div className="flex gap-2 items-center justify-between">
                   <h2 className="text-sm font-mono text-gray-500 uppercase tracking-widest">상영관 선택</h2>
                 </div>
-                <div className="relative">
-                  <select
-                    value={selectedTheater?.id || ''}
-                    onChange={(e) => setSelectedTheater(theaters.find(t => t.id === e.target.value) || null)}
-                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-lg"
-                  >
-                    <option value="">관리할 상영관을 선택하세요</option>
-                    {groupedTheaters.map(([branch, ths]) => (
-                      <optgroup key={branch} label={branch} className="bg-white text-gray-600">
-                        {ths.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name} (총 {Object.keys(t.seats).length}석)</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-5 h-5 text-gray-500 rotate-90" /></div>
-                </div>
-
-                {selectedTheater && isAdmin && (
-                  <div className="space-y-2 mt-2">
-                    <button 
-                      className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold py-3 text-sm rounded-xl transition-colors"
-                      onClick={(e) => handleClearReservations(selectedTheater.id, e)}
-                    >
-                      현재 상영관 예약 데이터 초기화
-                    </button>
-                    
-                    <div className="pt-4 border-t border-gray-200">
-                      <p className="text-xs text-gray-500 mb-2 font-mono uppercase tracking-widest text-center">AI Auto Placement</p>
-                      <button onClick={handleDownloadTemplate} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 text-sm rounded-xl transition-colors mb-2 flex items-center justify-center gap-2">
-                        <Download className="w-4 h-4" /> 엑셀 양식 다운로드
-                      </button>
-                      <button onClick={() => setShowExcelModal(true)} className="w-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold py-3 text-sm rounded-xl transition-colors text-center shadow-lg flex items-center justify-center gap-2">
-                        <FileSpreadsheet className="w-4 h-4" /> 엑셀 자동 배정 시작
-                      </button>
+                
+                {!selectedProject ? (
+                  <div className="p-8 bg-blue-50 border border-blue-200 rounded-2xl text-center space-y-3">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Settings className="w-6 h-6 text-blue-600" />
                     </div>
+                    <p className="text-blue-700 font-bold text-lg">프로젝트를 먼저 선택해주세요</p>
+                    <p className="text-sm text-blue-600/80">상단 우측 메뉴에서 관리할<br/>프로젝트(영화명)를 선택해주세요.</p>
                   </div>
+                ) : (
+                  <>
+                    {/* Brand Selection UI */}
+                    <div className="flex gap-3 bg-gray-50 p-2 rounded-xl border border-gray-200">
+                      {Object.keys(BRAND_LOGOS).map(brand => (
+                        <button 
+                          key={brand}
+                          onClick={() => { setSelectedBrand(brand); setSelectedBranch(''); setSelectedTheater(null); }}
+                          className={cn("flex-1 py-3 rounded-xl transition-all border flex items-center justify-center shadow-sm relative overflow-hidden", selectedBrand === brand ? "border-blue-500 bg-zinc-900 ring-2 ring-blue-500/20" : "border-zinc-300 bg-zinc-900 hover:bg-zinc-800")}
+                        >
+                          <img src={BRAND_LOGOS[brand]} alt={brand} className="h-6 object-contain z-10 relative transition-all" />
+                        </button>
+                      ))}
+                    </div>
+
+                    {selectedBrand && (
+                      <div className="flex flex-wrap gap-2 p-4 bg-white rounded-xl border border-gray-200 shadow-sm">
+                        <div className="w-full text-xs font-mono text-gray-500 mb-1">지점 선택</div>
+                        {groupedTheaters
+                          .filter(([branch, ths]) => (ths[0]?.brand || 'CGV') === selectedBrand)
+                          .map(([branch]) => (
+                            <button
+                              key={branch}
+                              onClick={() => { setSelectedBranch(branch); setSelectedTheater(null); }}
+                              className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-colors border shadow-sm", selectedBranch === branch ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700")}
+                            >
+                              {branch}
+                            </button>
+                          ))}
+                        {groupedTheaters.filter(([branch, ths]) => (ths[0]?.brand || 'CGV') === selectedBrand).length === 0 && (
+                           <div className="text-sm text-gray-400 italic">등록된 지점이 없습니다.</div>
+                        )}
+                      </div>
+                    )}
+
+                    {selectedBranch && (
+                      <div className="relative">
+                        <select
+                          value={selectedTheater?.id || ''}
+                          onChange={(e) => setSelectedTheater(theaters.find(t => t.id === e.target.value) || null)}
+                          className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-lg font-bold"
+                        >
+                          <option value="">상영관을 선택하세요</option>
+                          {groupedTheaters
+                            .filter(([branch, ths]) => branch === selectedBranch)
+                            .map(([branch, ths]) => (
+                            <optgroup key={branch} label={branch} className="bg-white text-gray-600">
+                              {ths.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name} (총 {Object.keys(t.seats).length}석)</option>)}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-5 h-5 text-gray-500 rotate-90" /></div>
+                      </div>
+                    )}
+
+                    {selectedTheater && isAdmin && (
+                      <div className="space-y-2 mt-2">
+                        <button 
+                          className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 font-bold py-3 text-sm rounded-xl transition-colors"
+                          onClick={(e) => handleClearReservations(selectedTheater.id, e)}
+                        >
+                          현재 상영관 예약 데이터 초기화
+                        </button>
+                        
+                        <div className="pt-4 border-t border-gray-200">
+                          <p className="text-xs text-gray-500 mb-2 font-mono uppercase tracking-widest text-center">AI Auto Placement</p>
+                          <button onClick={handleDownloadTemplate} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 text-sm rounded-xl transition-colors mb-2 flex items-center justify-center gap-2">
+                            <Download className="w-4 h-4" /> 엑셀 양식 다운로드
+                          </button>
+                          <button onClick={() => setShowExcelModal(true)} className="w-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-bold py-3 text-sm rounded-xl transition-colors text-center shadow-lg flex items-center justify-center gap-2">
+                            <FileSpreadsheet className="w-4 h-4" /> 엑셀 자동 배정 시작
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
 
-              {selectedTheater && !showAdmin && (
+              {selectedTheater && !showAdmin && selectedProject && (
                 <section className="p-6 bg-white rounded-2xl border border-gray-200 space-y-6">
                   <div className="space-y-2">
                     <h3 className="text-xl font-bold flex items-center gap-2"><Check className="w-5 h-5 text-blue-500" /> 좌석 예약하기</h3>
@@ -1081,7 +1131,18 @@ export default function App() {
                       )
                     )}
                   </motion.div>
-                ) : <div className="h-[600px] flex items-center justify-center text-gray-400">상영관을 선택하세요.</div>}
+                ) : (
+                  <div className="h-[600px] flex flex-col items-center justify-center text-gray-500 bg-white rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center border border-gray-100">
+                      <LayoutDashboard className="w-8 h-8 text-gray-300" />
+                    </div>
+                    {selectedProject ? (
+                      <p className="text-lg font-bold">좌측에서 관리할 상영관을 선택해주세요</p>
+                    ) : (
+                       <p className="text-lg font-bold">상단 메뉴에서 프로젝트를 선택해주세요</p>
+                    )}
+                  </div>
+                )}
               </AnimatePresence>
             </div>
           </div>

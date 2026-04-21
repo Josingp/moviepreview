@@ -10,6 +10,7 @@ export interface Seat {
 
 export interface Theater {
   id: string;
+  brand?: string;
   name: string;
   branch: string;
   rows: number;

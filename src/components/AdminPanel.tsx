@@ -8,6 +8,7 @@ export const AdminPanel: React.FC = () => {
   const [jsonInput, setJsonInput] = useState('');
   const [theaterName, setTheaterName] = useState('');
   const [branchName, setBranchName] = useState('');
+  const [brandName, setBrandName] = useState('CGV');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [error, setError] = useState('');
 
@@ -70,6 +71,7 @@ export const AdminPanel: React.FC = () => {
       const theater: Omit<Theater, 'id'> = {
         name: theaterName,
         branch: branchName,
+        brand: brandName,
         rows,
         cols,
         seats
@@ -132,49 +134,61 @@ export const AdminPanel: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* 1. 상영관 세팅 영역 */}
-      <div className="p-6 bg-zinc-900 rounded-xl border border-zinc-800 space-y-6">
+      <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 space-y-6">
         <div className="flex items-center gap-2 mb-4">
-          <Upload className="w-5 h-5 text-blue-400" />
-          <h2 className="text-xl font-bold text-white">1. 상영관 좌석틀 생성 (JSON)</h2>
+          <Upload className="w-5 h-5 text-blue-500" />
+          <h2 className="text-xl font-bold text-gray-900">1. 상영관 좌석틀 생성 (JSON)</h2>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-mono text-zinc-500 uppercase">상영관 이름</label>
+            <label className="text-xs font-mono text-gray-500 uppercase">브랜드</label>
+            <select 
+              value={brandName}
+              onChange={(e) => setBrandName(e.target.value)}
+              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors appearance-none cursor-pointer"
+            >
+              <option value="CGV">CGV</option>
+              <option value="롯데시네마">롯데시네마</option>
+              <option value="메가박스">메가박스</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-mono text-gray-500 uppercase">상영관 이름</label>
             <input 
               type="text" 
               value={theaterName}
               onChange={(e) => setTheaterName(e.target.value)}
               placeholder="예: 1관, IMAX관"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-mono text-zinc-500 uppercase">지점명</label>
+            <label className="text-xs font-mono text-gray-500 uppercase">지점명</label>
             <input 
               type="text" 
               value={branchName}
               onChange={(e) => setBranchName(e.target.value)}
-              placeholder="예: CGV 용산아이파크몰"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              placeholder="예: 용산아이파크몰"
+              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-mono text-zinc-500 uppercase">CGV 좌석 JSON 데이터</label>
+          <label className="text-xs font-mono text-gray-500 uppercase">CGV 좌석 JSON 데이터</label>
           <textarea 
             value={jsonInput}
             onChange={(e) => setJsonInput(e.target.value)}
             placeholder="CGV 홈페이지의 seatArr JSON 데이터를 붙여넣으세요..."
-            className="w-full h-48 bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white font-mono text-xs focus:outline-none focus:border-blue-500 transition-colors resize-none"
+            className="w-full h-48 bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 font-mono text-xs focus:outline-none focus:border-blue-500 transition-colors resize-none"
           />
         </div>
 
         <button 
           onClick={handleImport}
           disabled={status === 'loading'}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
         >
           {status === 'loading' ? '처리 중...' : '데이터 임포트'}
         </button>
@@ -195,13 +209,13 @@ export const AdminPanel: React.FC = () => {
       </div>
 
       {/* 2. 위험 구역 (상영관 데이터 완전 삭제) */}
-      <div className="p-6 bg-zinc-900 rounded-xl border border-red-900/50 space-y-6 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+      <div className="p-6 bg-white rounded-xl border border-red-200 space-y-6 shadow-sm">
         <div className="flex items-center gap-2 mb-2">
           <Trash2 className="w-5 h-5 text-red-500" />
           <h2 className="text-xl font-bold text-red-500">2. 상영관 데이터 완전 삭제 (위험)</h2>
         </div>
         
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-gray-500">
           좌석 뼈대 데이터 자체를 DB에서 완전히 삭제합니다. 한 번 삭제하면 복구할 수 없으며, 작업을 위해 시스템 마스터 비밀번호가 필요합니다.
         </p>
 
@@ -209,17 +223,17 @@ export const AdminPanel: React.FC = () => {
           <select
             value={deleteTheaterId}
             onChange={(e) => setDeleteTheaterId(e.target.value)}
-            className="flex-1 bg-zinc-950 border border-red-900/30 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
+            className="flex-1 bg-gray-50 border border-red-200 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:border-red-500 transition-colors"
           >
             <option value="" disabled>삭제할 상영관 선택</option>
             {theaters.map(t => (
-              <option key={t.id} value={t.id}>{t.name} ({t.branch})</option>
+              <option key={t.id} value={t.id}>[{t.brand || 'CGV'}] {t.name} ({t.branch})</option>
             ))}
           </select>
           <button
             onClick={handleDeleteTheaterComplete}
             disabled={!deleteTheaterId}
-            className="px-6 py-3 bg-red-600 hover:bg-red-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-bold rounded-lg transition-colors whitespace-nowrap"
+            className="px-6 py-3 bg-red-600 hover:bg-red-500 disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-lg transition-colors whitespace-nowrap"
           >
             영구 삭제
           </button>
