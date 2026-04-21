@@ -4,7 +4,7 @@ export interface Seat {
   id: string; // e.g., "A-12"
   row: string; // e.g., "A"
   col: number; // e.g., 12
-  type: 'normal' | 'disabled' | 'sweetbox' | 'empty';
+  type: 'normal' | 'disabled' | 'sweetbox' | 'door' | 'sofa' | 'empty';
   label: string;
 }
 

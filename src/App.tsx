@@ -42,7 +42,8 @@ import {
   Map,
   Clock,
   Activity,
-  AlertCircle
+  AlertCircle,
+  DoorOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -111,6 +112,9 @@ export default function App() {
     onConfirm?: () => void;
     onCancel?: () => void;
   } | null>(null);
+
+  // 출입문 편집 모드 상태
+  const [editDoorMode, setEditDoorMode] = useState(false);
 
   const showAlert = (message: string) => {
     setDialog({ isOpen: true, type: 'alert', message });
@@ -483,7 +487,18 @@ export default function App() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const handleSeatClick = (seat: Seat) => {
+  const handleSeatClick = async (seat: Seat) => {
+    if (editDoorMode && selectedTheater) {
+      if (seat.type === 'door') {
+        const newSeats = { ...selectedTheater.seats };
+        delete newSeats[seat.id];
+        try {
+          await updateDoc(doc(db, 'theaters', selectedTheater.id), { seats: newSeats });
+        } catch(e: any) { showAlert('삭제 실패: ' + e.message); }
+      }
+      return;
+    }
+
     if (reservations[seat.id]) {
       if (isAdmin) {
         const res = reservations[seat.id];
@@ -493,6 +508,23 @@ export default function App() {
       return;
     }
     setSelectedSeats(prev => prev.find(s => s.id === seat.id) ? prev.filter(s => s.id !== seat.id) : [...prev, seat]);
+  };
+
+  const handleEmptySeatClick = async (row: string, col: number) => {
+    if (editDoorMode && selectedTheater) {
+      const seatId = `${row}-${col}`;
+      const newSeats = { ...selectedTheater.seats };
+      newSeats[seatId] = {
+        id: seatId,
+        row,
+        col,
+        label: 'EXIT',
+        type: 'door'
+      };
+      try {
+        await updateDoc(doc(db, 'theaters', selectedTheater.id), { seats: newSeats });
+      } catch(e: any) { showAlert('추가 실패: ' + e.message); }
+    }
   };
 
   const runExcelPlacement = async () => {
@@ -1034,6 +1066,14 @@ export default function App() {
                         <button onClick={handleClearProjectReservations} className="flex items-center gap-2 bg-red-900/20 hover:bg-red-900/40 border border-red-900/50 hover:border-red-500/50 text-sm text-red-400 py-2 px-4 rounded-lg transition-colors h-[42px]" title="프로젝트 전체 예약 삭제">
                           <AlertCircle className="w-4 h-4" /> 전체 예약 초기화
                         </button>
+                        
+                        <button 
+                          onClick={() => setEditDoorMode(!editDoorMode)} 
+                          className={cn("flex items-center gap-2 text-sm py-2 px-4 rounded-lg transition-colors h-[42px] border", editDoorMode ? "bg-green-600 border-green-500 text-white shadow-lg" : "bg-white hover:bg-gray-100 border-gray-300 text-gray-700")}
+                        >
+                          <DoorOpen className="w-4 h-4" /> {editDoorMode ? "출입문 편집 모드 ON" : "출입문 편집"}
+                        </button>
+
                         <div className="flex bg-white border border-gray-200 rounded-lg p-1">
                           <button onClick={() => setAdminViewMode('map')} className={cn("px-4 py-2 rounded text-sm font-bold transition-all flex items-center gap-2", adminViewMode === 'map' ? "bg-white border shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700")}>
                             <Map className="w-4 h-4" /> 배치도
@@ -1054,6 +1094,7 @@ export default function App() {
                         reservations={reservations}
                         selectedSeats={selectedSeats}
                         onSeatClick={handleSeatClick}
+                        onEmptySeatClick={handleEmptySeatClick}
                         isAdmin={isAdmin}
                         onSeatDrop={handleSelectionDrop}
                       />

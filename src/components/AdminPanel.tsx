@@ -9,6 +9,7 @@ export const AdminPanel: React.FC = () => {
   const [theaterName, setTheaterName] = useState('');
   const [branchName, setBranchName] = useState('');
   const [brandName, setBrandName] = useState('CGV');
+  const [isCustomBranch, setIsCustomBranch] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [error, setError] = useState('');
 
@@ -25,31 +26,90 @@ export const AdminPanel: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const parseCGVData = (data: any): Record<string, Seat> => {
-    const seats: Record<string, Seat> = {};
-    
+  const availableBranches = Array.from(new Set(
+    theaters
+      .filter(t => (t.brand || 'CGV') === brandName)
+      .map(t => t.branch)
+  )).sort();
+
+  useEffect(() => {
+    if (availableBranches.length > 0 && !isCustomBranch) {
+      if (!availableBranches.includes(branchName)) {
+        setBranchName(availableBranches[0]);
+      }
+    } else if (availableBranches.length === 0) {
+      setIsCustomBranch(true);
+      if (!isCustomBranch) setBranchName('');
+    }
+  }, [brandName, theaters, isCustomBranch]);
+
+  const parseSeatData = (data: any, selectedBrand: string): Record<string, Seat> => {
+    const rawSeats: Seat[] = [];
+    let maxColIndex = 0;
+
     if (Array.isArray(data)) {
       data.forEach((rowArr: any[], rowIndex) => {
         if (!Array.isArray(rowArr)) return;
         
         rowArr.forEach((seatData: any, colIndex) => {
-          if (!seatData || seatData.seatStusCd === '9') return; 
-
-          const rowNm = seatData.seatRowNm || String.fromCharCode(65 + rowIndex);
+          if (!seatData) return;
+          
+          if (selectedBrand === 'CGV' && seatData.seatStusCd === '9' && !seatData.customType) return;
+          
+          const isDoor = seatData.customType === 'door' || seatData.seatNo === 'EXIT';
+          const rowNm = seatData.seatRowNm || (rowIndex === 0 ? '@' : String.fromCharCode(65 + rowIndex));
           const seatNo = seatData.seatNo || (colIndex + 1).toString();
-          const id = `${rowNm}-${colIndex + 1}`;
-
-          seats[id] = {
-            id,
+          
+          rawSeats.push({
+            id: '', // 압축 후 재할당
             row: rowNm,
             col: colIndex + 1,
-            label: `${rowNm}${seatNo}`,
-            type: (seatData.customType || (seatData.szoneKindCd === '04' ? 'sweetbox' : 'normal')) as 'normal' | 'disabled' | 'sweetbox'
-          };
+            label: isDoor ? 'EXIT' : `${rowNm}${seatNo}`,
+            type: isDoor ? 'door' : (seatData.customType || (seatData.szoneKindCd === '04' ? 'sweetbox' : 'normal')) as 'normal' | 'disabled' | 'sweetbox' | 'door' | 'sofa'
+          });
+
+          if (colIndex + 1 > maxColIndex) maxColIndex = colIndex + 1;
         });
       });
     }
-    return seats;
+
+    // 빈 통로(여백) 압축 (너무 멀리 떨어진 출입문 등을 좌석 옆으로 당겨옴)
+    const colHasSeat = new Array(maxColIndex + 1).fill(false);
+    rawSeats.forEach(s => { colHasSeat[s.col] = true; });
+
+    const colMap: Record<number, number> = {};
+    let currentNewCol = 1;
+    let consecutiveEmpty = 0;
+    let hasAnySeatYet = false;
+
+    for (let c = 1; c <= maxColIndex; c++) {
+      if (colHasSeat[c]) {
+        hasAnySeatYet = true;
+        consecutiveEmpty = 0;
+        colMap[c] = currentNewCol++;
+      } else {
+        if (!hasAnySeatYet) {
+          colMap[c] = 0; // 좌측의 필요없는 빈공간 모두 제거
+        } else {
+          consecutiveEmpty++;
+          if (consecutiveEmpty <= 1) { // 1칸의 통로 여백까지만 유지
+            colMap[c] = currentNewCol++;
+          } else {
+            colMap[c] = currentNewCol - 1;
+          }
+        }
+      }
+    }
+
+    // 압축된 열 번호를 기반으로 최종 데이터 맵핑
+    const finalSeats: Record<string, Seat> = {};
+    rawSeats.forEach(s => {
+      s.col = colMap[s.col];
+      s.id = `${s.row}-${s.col}`; // SeatMap에서 매칭할 수 있도록 정확한 규칙으로 생성
+      finalSeats[s.id] = s;
+    });
+
+    return finalSeats;
   };
 
   const handleImport = async () => {
@@ -63,7 +123,7 @@ export const AdminPanel: React.FC = () => {
       setStatus('loading');
       const parsed = JSON.parse(jsonInput);
       const seatData = parsed.chooseSeatMyself?.seatArr || parsed.seatArr || parsed;
-      const seats = parseCGVData(seatData);
+      const seats = parseSeatData(seatData, brandName);
       
       const rows = Array.from(new Set(Object.values(seats).map(s => s.row))).length;
       const cols = Math.max(...Object.values(seats).map(s => s.col));
@@ -154,22 +214,55 @@ export const AdminPanel: React.FC = () => {
             </select>
           </div>
           <div className="space-y-2">
+            <label className="text-xs font-mono text-gray-500 uppercase">지점명</label>
+            {isCustomBranch || availableBranches.length === 0 ? (
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={branchName}
+                  onChange={(e) => setBranchName(e.target.value)}
+                  placeholder="예: 용산아이파크몰"
+                  className="flex-1 bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors"
+                />
+                {availableBranches.length > 0 && (
+                  <button 
+                    onClick={() => {
+                      setIsCustomBranch(false);
+                      setBranchName(availableBranches[0] || '');
+                    }}
+                    className="px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition-colors whitespace-nowrap"
+                  >
+                    취소
+                  </button>
+                )}
+              </div>
+            ) : (
+              <select
+                value={branchName}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setIsCustomBranch(true);
+                    setBranchName('');
+                  } else {
+                    setBranchName(e.target.value);
+                  }
+                }}
+                className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors appearance-none cursor-pointer"
+              >
+                {availableBranches.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+                <option value="custom" className="font-bold">+ 새 지점 직접 입력...</option>
+              </select>
+            )}
+          </div>
+          <div className="space-y-2">
             <label className="text-xs font-mono text-gray-500 uppercase">상영관 이름</label>
             <input 
               type="text" 
               value={theaterName}
               onChange={(e) => setTheaterName(e.target.value)}
               placeholder="예: 1관, IMAX관"
-              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-mono text-gray-500 uppercase">지점명</label>
-            <input 
-              type="text" 
-              value={branchName}
-              onChange={(e) => setBranchName(e.target.value)}
-              placeholder="예: 용산아이파크몰"
               className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-gray-900 focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
